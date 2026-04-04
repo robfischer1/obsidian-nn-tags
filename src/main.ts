@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting } from "obsidian";
+import { App, Plugin } from "obsidian";
 import { syntaxTree } from "@codemirror/language";
 import { RangeSetBuilder } from "@codemirror/state";
 import {
@@ -11,6 +11,8 @@ import {
 	WidgetType,
 } from "@codemirror/view";
 import { livePreviewState } from "obsidian";
+
+import {DEFAULT_SETTINGS, SettingTab, PluginSettings} from "./settings";
 
 const BASETAG = "basename-tag";
 
@@ -47,7 +49,7 @@ class TagWidget extends WidgetType {
 		super();
 	}
 
-	const nn = this.app.plugins.plugins['notebook-navigator']?.api
+	
 
 	toDOM(view: EditorView): HTMLElement {
 		return createTagNode(this.text, this.readingMode);
@@ -56,10 +58,14 @@ class TagWidget extends WidgetType {
 
 class editorPlugin implements PluginValue {
 	decorations: DecorationSet;
+	view: EditorView;
 
 	constructor(view: EditorView) {
 		this.decorations = this.buildDecorations(view);
+		this.view = view;
 	}
+
+	const nn = this.view.app.plugins.plugins['notebook-navigator']?.api
 
 	update(update: ViewUpdate): void {
 		if (
@@ -147,17 +153,17 @@ class editorPlugin implements PluginValue {
 
 						// Loop through the array of tags.
 						let currentIndex = contentNode.from;
-						for (let i = 0; i < tagsArray.length; i++) {
+						for (const tag of tagsArray) {
 							builder.add(
 								currentIndex,
-								currentIndex + tagsArray[i].length,
+								currentIndex + tag.length,
 								Decoration.replace({
-									widget: new TagWidget(tagsArray[i], false),
+									widget: new TagWidget(tag, false),
 								}),
 							);
 
 							// Length and the space char.
-							currentIndex += tagsArray[i].length + 1;
+							currentIndex += tag.length + 1;
 						}
 					}
 				},
@@ -182,8 +188,8 @@ const rerenderProperty = () => {
 		});
 }
 
-export default class TagRenderer extends Plugin {
-	public settings: SettingParams = DEFAULT_SETTING;
+export default class NotebookTags extends Plugin {
+	public settings: PluginSettings = DEFAULT_SETTINGS;
 
 	async onload() {
 		this.loadSettings();
@@ -191,7 +197,7 @@ export default class TagRenderer extends Plugin {
 			ViewPlugin.fromClass(editorPlugin, {
 				decorations: (value) =>
 					// only renders on editor if setting allows
-					this.settings.renderOnEditor
+					this.settings.enableNotebookTags
 						? value.decorations
 						: new RangeSetBuilder<Decoration>().finish(),
 			}),
@@ -225,41 +231,10 @@ export default class TagRenderer extends Plugin {
 		this.addSettingTab(new SettingTab(this.app, this));
 	}
 	async loadSettings() {
-		this.settings = Object.assign(DEFAULT_SETTING, await this.loadData());
+		this.settings = Object.assign(DEFAULT_SETTINGS, await this.loadData());
 	}
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
 }
 
-interface SettingParams {
-	renderOnEditor: boolean;
-}
-
-const DEFAULT_SETTING: SettingParams = {
-	renderOnEditor: true,
-};
-
-class SettingTab extends PluginSettingTab {
-	constructor(public app: App, public plugin: TagRenderer) {
-		super(app, plugin);
-	}
-
-	async display() {
-		const { settings: setting } = this.plugin;
-		const { containerEl } = this;
-		containerEl.empty();
-
-		const editorSetting = new Setting(containerEl);
-		editorSetting
-			.setName("Render on Editor")
-			.setDesc("Render basetags also on editor.")
-			.addToggle((toggle) => {
-				toggle.setValue(setting.renderOnEditor);
-				toggle.onChange(async (value) => {
-					setting.renderOnEditor = value;
-					await this.plugin.saveSettings();
-				});
-			});
-	}
-}
