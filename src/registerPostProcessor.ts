@@ -4,12 +4,12 @@ import { setIcon } from "obsidian";
 
 declare module "obsidian" {
     interface App {
-        plugins: { plugins: Record<string, any> };
+        plugins: { plugins: Record<string, { api?: NotebookNavigatorAPI }> };
     }
 }
 
 export function getNNApi(plugin: NotebookTags): NotebookNavigatorAPI | undefined {
-    return plugin.app.plugins.plugins['notebook-navigator']?.api as NotebookNavigatorAPI | undefined;
+    return plugin.app.plugins.plugins['notebook-navigator']?.api;
 }
 
 /** Normalize tag: strip leading # and lowercase */
@@ -51,7 +51,7 @@ export default function registerPostProcessor(plugin: NotebookTags) {
 
         el.findAll("a.tag").forEach((tagEl) => {
             const raw = tagEl.getAttribute('href') ?? tagEl.innerText;
-            applyNNMeta(tagEl as HTMLElement, raw, nn);
+            applyNNMeta(tagEl, raw, nn);
         });
     });
 }

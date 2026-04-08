@@ -1,4 +1,4 @@
-import { Plugin, setIcon } from "obsidian";
+import { Plugin } from "obsidian";
 import { syntaxTree } from "@codemirror/language";
 import { RangeSetBuilder } from "@codemirror/state";
 import {
@@ -153,26 +153,27 @@ const rerenderProperty = (plugin: NotebookTags) => {
 		});
 };
 
+function makeEditorExtension(plugin: NotebookTags) {
+	return ViewPlugin.fromClass(
+		class extends editorPlugin {
+			constructor(view: EditorView) { super(view, plugin); }
+		},
+		{
+			decorations: (value) =>
+				plugin.settings.enableNotebookTags
+					? value.decorations
+					: new RangeSetBuilder<Decoration>().finish(),
+		}
+	);
+}
+
 export default class NotebookTags extends Plugin {
 	public settings: PluginSettings = DEFAULT_SETTINGS;
 
 	async onload() {
 		await this.loadSettings();
 
-		const self = this;
-		this.registerEditorExtension(
-			ViewPlugin.fromClass(
-				class extends editorPlugin {
-					constructor(view: EditorView) { super(view, self); }
-				},
-				{
-					decorations: (value) =>
-						self.settings.enableNotebookTags
-							? value.decorations
-							: new RangeSetBuilder<Decoration>().finish(),
-				}
-			),
-		);
+		this.registerEditorExtension(makeEditorExtension(this));
 
 		registerPostProcessor(this);
 
@@ -184,7 +185,8 @@ export default class NotebookTags extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign(DEFAULT_SETTINGS, await this.loadData());
+		const saved = await this.loadData() as Partial<PluginSettings>;
+		this.settings = { ...DEFAULT_SETTINGS, ...saved };
 	}
 
 	async saveSettings() {
