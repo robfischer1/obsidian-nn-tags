@@ -1,4 +1,4 @@
-import { App, Plugin } from "obsidian";
+import { Plugin, setIcon } from "obsidian";
 import { syntaxTree } from "@codemirror/language";
 import { RangeSetBuilder } from "@codemirror/state";
 import {
@@ -10,49 +10,44 @@ import {
 	ViewUpdate,
 	WidgetType,
 } from "@codemirror/view";
-import { livePreviewState } from "obsidian";
+import { livePreviewState, editorLivePreviewField } from "obsidian";
 
-import {DEFAULT_SETTINGS, SettingTab, PluginSettings} from "./settings";
+import { DEFAULT_SETTINGS, SettingTab, PluginSettings } from "./settings";
+import registerPostProcessor, { getNNApi, applyNNMeta } from "./registerPostProcessor";
 
 const BASETAG = "basename-tag";
 
-/** Get the current vault name. */
-const getVaultName = () => this.app.getName();
-
 /** Create a custom tag node from text content (can include #). */
-const createTagNode = (text: string | null, readingMode: boolean) => {
+const createTagNode = (text: string, readingMode: boolean, plugin: NotebookTags): HTMLElement => {
 	const node = document.createElement("a");
-	if (!text) return node;
-
-	// Keep the 'tag' class for consistent css styles.
 	node.className = `tag ${BASETAG}`;
 	node.target = "_blank";
 	node.rel = "noopener";
-	// To comply with colorful-tag css seletor
 	node.href = readingMode ? `${text}` : `#${text}`;
 
-	const vaultStr = encodeURIComponent(getVaultName());
+	const vaultStr = encodeURIComponent(plugin.app.vault.getName());
 	const queryStr = `tag:${encodeURIComponent(text)}`;
 	node.dataset.uri = `obsidian://search?vault=${vaultStr}&query=${queryStr}`;
-
-	// Remove the hash tags to conform to the same style.
-	node.textContent = text.slice(text.lastIndexOf("/") + 1).replaceAll("#", "");
-
 	node.onclick = () => window.open(node.dataset.uri);
+
+	const nn = getNNApi(plugin);
+	if (nn?.isStorageReady()) {
+		applyNNMeta(node, text, nn);
+	} else {
+		node.textContent = text.slice(text.lastIndexOf("/") + 1).replaceAll("#", "");
+	}
 
 	return node;
 };
 
 /** Create a tag node in the type of widget from text content. */
 class TagWidget extends WidgetType {
-	constructor(private text: string, private readingMode: boolean) {
+	constructor(private text: string, private readingMode: boolean, private plugin: NotebookTags) {
 		super();
 	}
 
-	
-
-	toDOM(view: EditorView): HTMLElement {
-		return createTagNode(this.text, this.readingMode);
+	toDOM(_view: EditorView): HTMLElement {
+		return createTagNode(this.text, this.readingMode, this.plugin);
 	}
 }
 
@@ -60,12 +55,10 @@ class editorPlugin implements PluginValue {
 	decorations: DecorationSet;
 	view: EditorView;
 
-	constructor(view: EditorView) {
+	constructor(view: EditorView, private plugin: NotebookTags) {
 		this.decorations = this.buildDecorations(view);
 		this.view = view;
 	}
-
-	const nn = this.view.app.plugins.plugins['notebook-navigator']?.api
 
 	update(update: ViewUpdate): void {
 		if (
@@ -78,91 +71,57 @@ class editorPlugin implements PluginValue {
 		}
 	}
 
-	private buildDecorations(view: EditorView): DecorationSet {
+	destroy() {}
+
+	buildDecorations(view: EditorView): DecorationSet {
 		const builder = new RangeSetBuilder<Decoration>();
+		if (!view.state.field(editorLivePreviewField)) { return builder.finish(); }
 
 		for (const { from, to } of view.visibleRanges) {
 			syntaxTree(view.state).iterate({
 				from,
 				to,
 				enter: (node) => {
-					// Handle tags in the text region.
 					if (node.name.contains("hashtag-end")) {
-						// Do not render if falls under selection (cursor) range.
 						const extendedFrom = node.from - 1;
 						const extendedTo = node.to + 1;
-
 						for (const range of view.state.selection.ranges) {
-							if (extendedFrom <= range.to && range.from < extendedTo) {
-								return;
-							}
+							if (extendedFrom <= range.to && range.from < extendedTo) return;
 						}
-
 						const text = view.state.sliceDoc(node.from, node.to);
-
-						builder.add(
-							// To include the "#".
-							node.from - 1,
-							node.to,
-							Decoration.replace({
-								widget: new TagWidget(text, false),
-							}),
-						);
+						builder.add(node.from - 1, node.to, Decoration.replace({
+							widget: new TagWidget(text, false, this.plugin),
+						}));
 					}
 
-					// Handle tags in frontmatter.
 					if (node.name === "hmd-frontmatter") {
-						// Do not render if falls under selection (cursor) range.
 						const extendedFrom = node.from;
 						const extendedTo = node.to + 1;
-
 						for (const range of view.state.selection.ranges) {
-							if (extendedFrom <= range.to && range.from < extendedTo) {
-								return;
-							}
+							if (extendedFrom <= range.to && range.from < extendedTo) return;
 						}
 
 						let frontmatterName = "";
 						let currentNode = node.node;
-
-						// Go up the nodes to find the name for frontmatter, max 20.
 						for (let i = 0; i < 20; i++) {
 							currentNode = currentNode.prevSibling ?? node.node;
 							if (currentNode?.name.contains("atom")) {
-								frontmatterName = view.state.sliceDoc(
-									currentNode.from,
-									currentNode.to,
-								);
+								frontmatterName = view.state.sliceDoc(currentNode.from, currentNode.to);
 								break;
 							}
 						}
 
-						// Ignore if it's not frontmatter for tags.
-						if (
-							frontmatterName.toLowerCase() !== "tags" &&
-							frontmatterName.toLowerCase() !== "tag"
-						)
-							return;
+						if (frontmatterName.toLowerCase() !== "tags" && frontmatterName.toLowerCase() !== "tag") return;
 
 						const contentNode = node.node;
-						const content = view.state.sliceDoc(
-							contentNode.from,
-							contentNode.to,
-						);
+						const content = view.state.sliceDoc(contentNode.from, contentNode.to);
 						const tagsArray = content.split(" ").filter((tag) => tag !== "");
 
-						// Loop through the array of tags.
 						let currentIndex = contentNode.from;
 						for (const tag of tagsArray) {
-							builder.add(
-								currentIndex,
-								currentIndex + tag.length,
-								Decoration.replace({
-									widget: new TagWidget(tag, false),
-								}),
-							);
-
-							// Length and the space char.
+							builder.add(currentIndex, currentIndex + tag.length, Decoration.replace({
+								widget: new TagWidget(tag, false, this.plugin),
+							}));
 							currentIndex += tag.length + 1;
 						}
 					}
@@ -174,67 +133,61 @@ class editorPlugin implements PluginValue {
 	}
 }
 
-// Rerender Property by changing the text directly
-const rerenderProperty = () => {
+const rerenderProperty = (plugin: NotebookTags) => {
+	const nn = getNNApi(plugin);
+
 	document
-		.querySelectorAll<HTMLAnchorElement>(
+		.querySelectorAll<HTMLSpanElement>(
 			`[data-property-key="tags"] .multi-select-pill-content span:not(.${BASETAG})`,
 		)
-		.forEach((node: HTMLSpanElement) => {
+		.forEach((node) => {
 			const text = node.textContent ?? "";
-			node.textContent = text.slice(text.lastIndexOf("/") + 1);
 			node.className = BASETAG;
 			node.dataset.tag = text;
+
+			if (nn?.isStorageReady()) {
+				applyNNMeta(node, text, nn);
+			} else {
+				node.textContent = text.slice(text.lastIndexOf("/") + 1);
+			}
 		});
-}
+};
 
 export default class NotebookTags extends Plugin {
 	public settings: PluginSettings = DEFAULT_SETTINGS;
 
 	async onload() {
-		this.loadSettings();
+		await this.loadSettings();
+
+		const self = this;
 		this.registerEditorExtension(
-			ViewPlugin.fromClass(editorPlugin, {
-				decorations: (value) =>
-					// only renders on editor if setting allows
-					this.settings.enableNotebookTags
-						? value.decorations
-						: new RangeSetBuilder<Decoration>().finish(),
-			}),
-		);
-
-		this.registerMarkdownPostProcessor((el: HTMLElement) => {
-			// Find the original tags to render.
-			el.querySelectorAll<HTMLAnchorElement>(`a.tag:not(.${BASETAG})`).forEach(
-				(node: HTMLAnchorElement) => {
-					// Remove class 'tag' so it doesn't get rendered again.
-					node.removeAttribute("class");
-					// Hide this node and append the custom tag node in its place.
-					node.style.display = "none";
-					node.parentNode?.insertBefore(
-						createTagNode(node.textContent, true),
-						node,
-					);
+			ViewPlugin.fromClass(
+				class extends editorPlugin {
+					constructor(view: EditorView) { super(view, self); }
 				},
-			);
-		});
-
-		// Rerender property by changing the text directly
-		this.registerEvent(
-			this.app.workspace.on("layout-change", rerenderProperty)
+				{
+					decorations: (value) =>
+						self.settings.enableNotebookTags
+							? value.decorations
+							: new RangeSetBuilder<Decoration>().finish(),
+				}
+			),
 		);
 
-		this.registerEvent(
-			this.app.workspace.on("file-open", rerenderProperty)
-		);
+		registerPostProcessor(this);
+
+		const rerender = () => rerenderProperty(this);
+		this.registerEvent(this.app.workspace.on("layout-change", rerender));
+		this.registerEvent(this.app.workspace.on("file-open", rerender));
 
 		this.addSettingTab(new SettingTab(this.app, this));
 	}
+
 	async loadSettings() {
 		this.settings = Object.assign(DEFAULT_SETTINGS, await this.loadData());
 	}
+
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
 }
-
