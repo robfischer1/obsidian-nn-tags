@@ -10,7 +10,7 @@ import {
 	ViewUpdate,
 	WidgetType,
 } from "@codemirror/view";
-import { livePreviewState, editorLivePreviewField } from "obsidian";
+import { editorLivePreviewField } from 'obsidian';
 
 import { DEFAULT_SETTINGS, SettingTab, PluginSettings } from "./settings";
 import registerPostProcessor, { getNNApi, applyNNMeta } from "./registerPostProcessor";
@@ -19,19 +19,21 @@ const BASETAG = "basename-tag";
 
 /** Create a custom tag node from text content (can include #). */
 const createTagNode = (text: string, readingMode: boolean, plugin: NotebookTagsPlugin): HTMLElement => {
-	const node = document.createElement("a");
+	const node = document.createElement("span");
 	node.className = `tag ${BASETAG}`;
-	node.target = "_blank";
-	node.rel = "noopener";
-	node.href = readingMode ? `${text}` : `#${text}`;
-
-	const vaultStr = encodeURIComponent(plugin.app.vault.getName());
-	const queryStr = `tag:${encodeURIComponent(text)}`;
-	node.dataset.uri = `obsidian://search?vault=${vaultStr}&query=${queryStr}`;
-	node.onclick = () => window.open(node.dataset.uri);
+	node.role = "button";
+	node.tabIndex = 0;
 
 	const nn = getNNApi(plugin);
 	const fallbackLabel = text.slice(text.lastIndexOf("/") + 1).replaceAll("#", "");
+
+	node.onclick = (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+		if (nn) {
+			nn.navigation.navigateToTag(text).catch(() => {});
+		}
+	};
 
 	if (nn) {
 		if (nn.isStorageReady()) {
@@ -68,73 +70,86 @@ class editorPlugin implements PluginValue {
 	}
 
 	update(update: ViewUpdate): void {
-		if (
-			update.view.composing ||
-			update.view.plugin(livePreviewState)?.mousedown
-		) {
-			this.decorations = this.decorations.map(update.changes);
-		} else if (update.selectionSet || update.viewportChanged) {
-			this.decorations = this.buildDecorations(update.view);
+			//@ts-ignore eslint-disable-next-line @typescript-eslint/no-unsafe-member-access 
+			if (update.docChanged || update.viewportChanged || update.transactions?.[0]?.annotations?.[0]?.value) {
+				this.decorations = this.buildDecorations(update.view);
+			}
 		}
-	}
-
-	destroy() {}
-
-	buildDecorations(view: EditorView): DecorationSet {
-		const builder = new RangeSetBuilder<Decoration>();
+	buildDecorations(view: EditorView): DecorationSet {			/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */		const builder = new RangeSetBuilder<Decoration>();
 		if (!view.state.field(editorLivePreviewField)) { return builder.finish(); }
 
-		for (const { from, to } of view.visibleRanges) {
-			syntaxTree(view.state).iterate({
-				from,
-				to,
-				enter: (node) => {
-					if (node.name.contains("hashtag-end")) {
-						const extendedFrom = node.from - 1;
-						const extendedTo = node.to + 1;
-						for (const range of view.state.selection.ranges) {
-							if (extendedFrom <= range.to && range.from < extendedTo) return;
-						}
-						const text = view.state.sliceDoc(node.from, node.to);
-						builder.add(node.from - 1, node.to, Decoration.replace({
-							widget: new TagWidget(text, false, this.plugin),
-						}));
-					}
+		try {
+			if (this.plugin.settings.enableNotebookTags) {
+				for (let { from, to } of view.visibleRanges) {
+					let tagTextStart = 0;
 
-					if (node.name === "hmd-frontmatter") {
-						const extendedFrom = node.from;
-						const extendedTo = node.to + 1;
-						for (const range of view.state.selection.ranges) {
-							if (extendedFrom <= range.to && range.from < extendedTo) return;
-						}
-
-						let frontmatterName = "";
-						let currentNode = node.node;
-						for (let i = 0; i < 20; i++) {
-							currentNode = currentNode.prevSibling ?? node.node;
-							if (currentNode?.name.contains("atom")) {
-								frontmatterName = view.state.sliceDoc(currentNode.from, currentNode.to);
-								break;
+					syntaxTree(view.state).iterate({
+						from,
+						to,
+						enter: (node: any) => {
+							if (node.type.name.contains("hashtag-begin")) {
+								tagTextStart = node.to;
 							}
-						}
 
-						if (frontmatterName.toLowerCase() !== "tags" && frontmatterName.toLowerCase() !== "tag") return;
+							if (node.type.name.contains("hashtag-end")) {
+								let tagId = view.state.sliceDoc(tagTextStart, node.to);
+								let nn = getNNApi(this.plugin);
 
-						const contentNode = node.node;
-						const content = view.state.sliceDoc(contentNode.from, contentNode.to);
-						const tagsArray = content.split(" ").filter((tag) => tag !== "");
+								if (nn && nn.isStorageReady()) {
+									const meta = nn.metadata.getTagMeta(tagId);
+									let styleText = '';
+									if (meta?.color) styleText += `color: ${meta.color}; `;
+									if (meta?.backgroundColor) styleText += `background-color: ${meta.backgroundColor}; `;
 
-						let currentIndex = contentNode.from;
-						for (const tag of tagsArray) {
-							builder.add(currentIndex, currentIndex + tag.length, Decoration.replace({
-								widget: new TagWidget(tag, false, this.plugin),
-							}));
-							currentIndex += tag.length + 1;
-						}
-					}
-				},
-			});
+									builder.add(tagTextStart - 1, node.to, Decoration.mark({
+										attributes: {
+											"data-tag-value": tagId,
+											style: styleText
+										},
+										class: "cm-hashtag-inner cm-hashtag cm-meta cm-tag-" + tagId.replace(/[^a-zA-Z0-9]/g, '-')
+									}));
+								}
+							}
+
+							if (node.name === "hmd-frontmatter") {
+								const extendedFrom = node.from;
+								const extendedTo = node.to + 1;
+								for (const range of view.state.selection.ranges) {
+									if (extendedFrom <= range.to && range.from < extendedTo) return;
+								}
+
+								let frontmatterName = "";
+								let currentNode = node.node;
+								for (let i = 0; i < 20; i++) {
+									currentNode = currentNode.prevSibling ?? node.node;
+									if (currentNode?.name.contains("atom")) {
+										frontmatterName = view.state.sliceDoc(currentNode.from, currentNode.to);
+										break;
+									}
+								}
+
+								if (frontmatterName.toLowerCase() !== "tags" && frontmatterName.toLowerCase() !== "tag") return;
+
+								const contentNode = node.node;
+								const content = view.state.sliceDoc(contentNode.from, contentNode.to);
+								const tagsArray = content.split(" ").filter((tag) => tag !== "");
+
+								let currentIndex = contentNode.from;
+								for (const tag of tagsArray) {
+									builder.add(currentIndex, currentIndex + tag.length, Decoration.replace({
+										widget: new TagWidget(tag, false, this.plugin),
+									}));
+									currentIndex += tag.length + 1;
+								}
+							}
+						},
+					});
+				}
+			}
+		} catch {
+			console.error("Can not build tag decorations");
 		}
+		/* eslint-enable */
 
 		return builder.finish();
 	}
