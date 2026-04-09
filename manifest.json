@@ -1,7 +1,7 @@
 {
 	"id": "notebook-tags-plugin",
 	"name": "Notebook Tags",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"minAppVersion": "0.17.0",
 	"description": "Demonstrates some of the capabilities of the Obsidian API.",
 	"author": "Obsidian",
