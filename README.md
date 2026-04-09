@@ -1,16 +1,13 @@
-# Obsidian Sample Plugin
+# Notebook Tags
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+An Obsidian plugin that enhances tag rendering using Notebook Navigator metadata.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+This plugin applies Notebook Navigator tag icon, color, and background color metadata to tags rendered inside markdown, property tag pills, and frontmatter tag lists.
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+Key behaviors:
+- Replaces the visible tag text with the Notebook Navigator tag icon plus the basename after the last `/`.
+- Applies `color` and `backgroundColor` metadata from Notebook Navigator to rendered tag pills.
+- Works with Obsidian markdown tags and `tags` property pills.
 
 ## First time developing plugins?
 

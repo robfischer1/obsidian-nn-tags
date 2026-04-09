@@ -1,26 +1,27 @@
-.basename-tag,
-.tag.basename-tag {
+.nm-tagged {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.2em;
-	padding: 0.15em 0.35em;
-	border-radius: 0.35em;
-	text-decoration: none;
-	font-weight: 500;
+	border-radius: 0.75em;
+	padding: 0.125em 0.35em;
 	line-height: 1.2;
+	color: var(--nm-tag-color, inherit);
+	background-color: var(--nm-tag-background, transparent);
 }
 
-.basename-tag .nm-tag-icon,
-.tag.basename-tag .nm-tag-icon {
+.nm-tagged .nm-tag-icon {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	color: inherit;
-	margin-right: 0.2em;
 }
 
-.basename-tag.nm-tagged,
-.tag.basename-tag.nm-tagged {
+span.basename-tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.2em;
+}
+
+span.basename-tag.nm-tagged {
 	color: var(--nm-tag-color, inherit);
 	background-color: var(--nm-tag-background, transparent);
 }
