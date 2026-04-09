@@ -1,5 +1,5 @@
 import {App, PluginSettingTab, Setting} from "obsidian";
-import NotebookTags from "./main";
+import NotebookTagsPlugin from "./main";
 
 export interface PluginSettings {
 	enableNotebookTags: boolean;
@@ -10,7 +10,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 };
 
 export class SettingTab extends PluginSettingTab {
-	constructor(public app: App, public plugin: NotebookTags) {
+	constructor(public app: App, public plugin: NotebookTagsPlugin) {
 		super(app, plugin);
 	}
 

@@ -1,4 +1,4 @@
-import NotebookTags from "./main";
+import NotebookTagsPlugin from "./main";
 import type { NotebookNavigatorAPI } from "./notebook-navigator";
 import { setIcon } from "obsidian";
 
@@ -8,7 +8,7 @@ declare module "obsidian" {
     }
 }
 
-export function getNNApi(plugin: NotebookTags): NotebookNavigatorAPI | undefined {
+export function getNNApi(plugin: NotebookTagsPlugin): NotebookNavigatorAPI | undefined {
     return plugin.app.plugins.plugins['notebook-navigator']?.api;
 }
 
@@ -24,10 +24,14 @@ export function applyNNMeta(el: HTMLElement, rawTag: string, nn: NotebookNavigat
     const label = tag.slice(tag.lastIndexOf('/') + 1);
 
     el.empty();
+    el.classList.add('nm-tagged');
 
     if (meta?.icon) {
         const iconEl = el.createSpan({ cls: 'nm-tag-icon' });
         setIcon(iconEl, meta.icon);
+        if (meta.color) {
+            iconEl.style.color = meta.color;
+        }
         el.appendChild(iconEl);
     }
 
@@ -35,14 +39,18 @@ export function applyNNMeta(el: HTMLElement, rawTag: string, nn: NotebookNavigat
 
     if (meta?.color) {
         el.style.setProperty('--nm-tag-color', meta.color);
-        el.style.color = meta.color;
+    } else {
+        el.style.removeProperty('--nm-tag-color');
     }
+
     if (meta?.backgroundColor) {
-        el.style.backgroundColor = meta.backgroundColor;
+        el.style.setProperty('--nm-tag-background', meta.backgroundColor);
+    } else {
+        el.style.removeProperty('--nm-tag-background');
     }
 }
 
-export default function registerPostProcessor(plugin: NotebookTags) {
+export default function registerPostProcessor(plugin: NotebookTagsPlugin) {
     plugin.registerMarkdownPostProcessor(async (el) => {
         const nn = getNNApi(plugin);
         if (!nn) return;

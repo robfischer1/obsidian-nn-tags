@@ -1,8 +1,26 @@
-/*
+.basename-tag,
+.tag.basename-tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.2em;
+	padding: 0.15em 0.35em;
+	border-radius: 0.35em;
+	text-decoration: none;
+	font-weight: 500;
+	line-height: 1.2;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.basename-tag .nm-tag-icon,
+.tag.basename-tag .nm-tag-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: inherit;
+	margin-right: 0.2em;
+}
 
-If your plugin does not need CSS, delete this file.
-
-*/
+.basename-tag.nm-tagged,
+.tag.basename-tag.nm-tagged {
+	color: var(--nm-tag-color, inherit);
+	background-color: var(--nm-tag-background, transparent);
+}

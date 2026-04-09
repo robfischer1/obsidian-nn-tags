@@ -18,7 +18,7 @@ import registerPostProcessor, { getNNApi, applyNNMeta } from "./registerPostProc
 const BASETAG = "basename-tag";
 
 /** Create a custom tag node from text content (can include #). */
-const createTagNode = (text: string, readingMode: boolean, plugin: NotebookTags): HTMLElement => {
+const createTagNode = (text: string, readingMode: boolean, plugin: NotebookTagsPlugin): HTMLElement => {
 	const node = document.createElement("a");
 	node.className = `tag ${BASETAG}`;
 	node.target = "_blank";
@@ -31,10 +31,17 @@ const createTagNode = (text: string, readingMode: boolean, plugin: NotebookTags)
 	node.onclick = () => window.open(node.dataset.uri);
 
 	const nn = getNNApi(plugin);
-	if (nn?.isStorageReady()) {
-		applyNNMeta(node, text, nn);
+	const fallbackLabel = text.slice(text.lastIndexOf("/") + 1).replaceAll("#", "");
+
+	if (nn) {
+		if (nn.isStorageReady()) {
+			applyNNMeta(node, text, nn);
+		} else {
+			node.textContent = fallbackLabel;
+			nn.whenReady().then(() => applyNNMeta(node, text, nn)).catch(() => {});
+		}
 	} else {
-		node.textContent = text.slice(text.lastIndexOf("/") + 1).replaceAll("#", "");
+		node.textContent = fallbackLabel;
 	}
 
 	return node;
@@ -42,7 +49,7 @@ const createTagNode = (text: string, readingMode: boolean, plugin: NotebookTags)
 
 /** Create a tag node in the type of widget from text content. */
 class TagWidget extends WidgetType {
-	constructor(private text: string, private readingMode: boolean, private plugin: NotebookTags) {
+	constructor(private text: string, private readingMode: boolean, private plugin: NotebookTagsPlugin) {
 		super();
 	}
 
@@ -55,7 +62,7 @@ class editorPlugin implements PluginValue {
 	decorations: DecorationSet;
 	view: EditorView;
 
-	constructor(view: EditorView, private plugin: NotebookTags) {
+	constructor(view: EditorView, private plugin: NotebookTagsPlugin) {
 		this.decorations = this.buildDecorations(view);
 		this.view = view;
 	}
@@ -133,7 +140,7 @@ class editorPlugin implements PluginValue {
 	}
 }
 
-const rerenderProperty = (plugin: NotebookTags) => {
+const rerenderProperty = (plugin: NotebookTagsPlugin) => {
 	const nn = getNNApi(plugin);
 
 	document
@@ -151,9 +158,13 @@ const rerenderProperty = (plugin: NotebookTags) => {
 				node.textContent = text.slice(text.lastIndexOf("/") + 1);
 			}
 		});
+
+	if (nn && !nn.isStorageReady()) {
+		nn.whenReady().then(() => rerenderProperty(plugin)).catch(() => {});
+	}
 };
 
-function makeEditorExtension(plugin: NotebookTags) {
+function makeEditorExtension(plugin: NotebookTagsPlugin) {
 	return ViewPlugin.fromClass(
 		class extends editorPlugin {
 			constructor(view: EditorView) { super(view, plugin); }
@@ -167,7 +178,7 @@ function makeEditorExtension(plugin: NotebookTags) {
 	);
 }
 
-export default class NotebookTags extends Plugin {
+export default class NotebookTagsPlugin extends Plugin {
 	public settings: PluginSettings = DEFAULT_SETTINGS;
 
 	async onload() {
@@ -180,6 +191,7 @@ export default class NotebookTags extends Plugin {
 		const rerender = () => rerenderProperty(this);
 		this.registerEvent(this.app.workspace.on("layout-change", rerender));
 		this.registerEvent(this.app.workspace.on("file-open", rerender));
+		rerender();
 
 		this.addSettingTab(new SettingTab(this.app, this));
 	}
