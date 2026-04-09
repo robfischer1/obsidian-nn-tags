@@ -45,15 +45,20 @@ function decorateTagElement(element: HTMLElement, rawTag: string, api: NotebookN
 	element.classList.add("nm-tagged");
 
 	if (metadata?.icon) {
-		const iconEl = element.createSpan({ cls: "nm-tag-icon" });
-		setIcon(iconEl, metadata.icon);
+		element.classList.add("has-icon");
+		element.setAttribute("data-icon", metadata.icon);
+		setIcon(element, metadata.icon);
 		if (metadata.color) {
-			iconEl.style.color = metadata.color;
+			element.style.color = metadata.color;
 		}
-		element.appendChild(iconEl);
 	}
 
-	element.appendChild(document.createTextNode(label));
+	// Append text content or preserve it if icon was set
+	if (metadata?.icon) {
+		element.textContent = label;
+	} else {
+		element.appendChild(document.createTextNode(label));
+	}
 
 	if (metadata?.color) {
 		element.style.setProperty("--nm-tag-color", metadata.color);
