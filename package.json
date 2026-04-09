@@ -1,7 +1,7 @@
 {
 	"name": "obsidian-notebook-tags-plugin",
 	"version": "1.0.2",
-	"description": "Uses notebook navigator style tags in notes",
+	"description": "Render Notebook Navigator tag icons, labels, and colors inline for markdown tags and tag pills.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
@@ -28,7 +28,5 @@
 		"obsidian": "latest",
 		"rome": "^12.1.0"
 	},
-	"dependencies": {
-		"obsidian": "latest"
-	}
+	"dependencies": {}
 }

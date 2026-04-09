@@ -1,11 +1,11 @@
-import {App, PluginSettingTab, Setting} from "obsidian";
-import NotebookTagsPlugin from "./main";
+import { App, PluginSettingTab, Setting } from "obsidian";
+import type NotebookTagsPlugin from "./main";
 
-export interface PluginSettings {
+export interface NotebookTagsSettings {
 	enableNotebookTags: boolean;
 }
 
-export const DEFAULT_SETTINGS: PluginSettings = {
+export const DEFAULT_SETTINGS: NotebookTagsSettings = {
 	enableNotebookTags: true,
 };
 
