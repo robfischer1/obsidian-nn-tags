@@ -51,11 +51,8 @@ function decorateTagElement(element: HTMLElement, rawTag: string, api: NotebookN
 		if (metadata.color) {
 			element.style.color = metadata.color;
 		}
-	}
-
-	// Append text content or preserve it if icon was set
-	if (metadata?.icon) {
-		element.textContent = label;
+		// Append label as text node after icon to preserve SVG
+		element.appendChild(document.createTextNode(label));
 	} else {
 		element.appendChild(document.createTextNode(label));
 	}
@@ -92,7 +89,7 @@ export function updatePropertyTagPills(plugin: NotebookTagsPlugin) {
 	const selector = `[data-property-key="tags"] .multi-select-pill-content span:not(.${BASELINE_TAG_CLASS})`;
 	document.querySelectorAll<HTMLElement>(selector).forEach((span) => {
 		const tagText = span.textContent ?? "";
-		span.className = BASELINE_TAG_CLASS;
+		span.classList.add(BASELINE_TAG_CLASS);
 		span.dataset.tag = tagText;
 		if (api?.isStorageReady()) {
 			decorateTagElement(span, tagText, api);
@@ -110,7 +107,8 @@ export function updatePropertyTagPills(plugin: NotebookTagsPlugin) {
 
 function createTagWidget(tag: string, plugin: NotebookTagsPlugin): HTMLElement {
 	const wrapper = document.createElement("span");
-	wrapper.className = `tag ${BASELINE_TAG_CLASS}`;
+	wrapper.className = "tag";
+	wrapper.classList.add(BASELINE_TAG_CLASS);
 	wrapper.role = "button";
 	wrapper.tabIndex = 0;
 	wrapper.onclick = (event) => {
