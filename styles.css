@@ -20,6 +20,22 @@
 	font-size: var(--font-text-size);
 }
 
+/* Live editor widget icon matches editor font size */
+.cm-content .nm-tagged .nn-file-pill-inline-icon {
+	width: var(--font-text-size);
+	height: var(--font-text-size);
+}
+
+.cm-content .nm-tagged .nn-file-pill-inline-icon svg {
+	width: var(--font-text-size);
+	height: var(--font-text-size);
+}
+
+/* Remove bold from color-only pills in the live editor */
+.cm-content .nm-tagged[data-has-color="true"]:not([data-has-background="true"]) {
+	font-weight: 400;
+}
+
 /* ── Frontmatter property pills ─────────────────────────────────────────────
    We decorate .multi-select-pill directly (color/bg on the wrapper,
    label rebuilt inside .multi-select-pill-content).                        */
