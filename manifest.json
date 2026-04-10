@@ -1,7 +1,7 @@
 {
 	"id": "notebook-tags-plugin",
 	"name": "Notebook Tags",
-	"version": "1.1.1",
+	"version": "1.1.2",
 	"minAppVersion": "0.17.0",
 	"description": "Render Notebook Navigator tag icons, labels, and colors inline for markdown tags and tag pills.",
 	"author": "Obsidian",
