@@ -1,5 +1,4 @@
-import { editorLivePreviewField } from "obsidian";
-import { setIcon } from "obsidian";
+import { editorLivePreviewField, setIcon } from "obsidian";
 import { syntaxTree } from "@codemirror/language";
 import { RangeSetBuilder } from "@codemirror/state";
 import { Decoration, ViewPlugin, WidgetType, ViewUpdate, EditorView } from "@codemirror/view";
@@ -32,6 +31,47 @@ function logMetrics(context: string, metrics: DecoratorMetrics): void {
 
 function shouldSkipRange(nodeFrom: number, nodeTo: number, selections: readonly { from: number; to: number }[]) {
 	return selections.some((selection) => nodeFrom <= selection.to && selection.from < nodeTo);
+}
+
+// Rebuilds the label (and optional icon) inside .multi-select-pill-content.
+function setPillLabel(pill: HTMLElement, label: string, iconId?: string): void {
+	const content = pill.querySelector<HTMLElement>(".multi-select-pill-content");
+	if (!content) return;
+	content.textContent = "";
+	if (iconId) {
+		const iconSpan = document.createElement("span");
+		iconSpan.className = "nn-file-pill-inline-icon";
+		iconSpan.setAttribute("aria-hidden", "true");
+		try { setIcon(iconSpan, iconId); } catch { /* ignore unknown icon */ }
+		content.appendChild(iconSpan);
+	}
+	content.appendChild(document.createTextNode(label));
+}
+
+// Applies NN metadata to a .multi-select-pill element.
+// Color/background are set on the pill wrapper; label is rebuilt inside pill-content.
+function decoratePillElement(pill: HTMLElement, rawTag: string, api: NotebookNavigatorAPI): void {
+	const tag = normalizeTag(rawTag);
+	const metadata = getTagMetaWithInheritance(api, tag);
+	const label = basenameFromTag(tag);
+
+	if (metadata?.backgroundColor) {
+		pill.style.setProperty("--nn-file-tag-custom-bg", metadata.backgroundColor);
+		pill.dataset.hasBackground = "true";
+	} else {
+		pill.style.removeProperty("--nn-file-tag-custom-bg");
+		delete pill.dataset.hasBackground;
+	}
+
+	if (metadata?.color) {
+		pill.style.color = metadata.color;
+		pill.dataset.hasColor = "true";
+	} else {
+		pill.style.removeProperty("color");
+		delete pill.dataset.hasColor;
+	}
+
+	setPillLabel(pill, label, metadata?.icon ?? undefined);
 }
 
 export function renderMarkdownTags(plugin: NotebookTagsPlugin) {
@@ -130,65 +170,6 @@ export function updatePropertyTagPills(plugin: NotebookTagsPlugin) {
 	}
 }
 
-// Applies NN metadata (color, background, icon) to a .multi-select-pill element.
-// Color/background go on the pill itself; the label is rebuilt inside pill-content.
-function decoratePillElement(pill: HTMLElement, rawTag: string, api: NotebookNavigatorAPI): void {
-	const tag = normalizeTag(rawTag);
-	const metadata = getTagMetaWithInheritance(api, tag);
-	const label = basenameFromTag(tag);
-
-	if (metadata?.backgroundColor) {
-		pill.style.setProperty("--nn-file-tag-custom-bg", metadata.backgroundColor);
-		pill.dataset.hasBackground = "true";
-	} else {
-		pill.style.removeProperty("--nn-file-tag-custom-bg");
-		delete pill.dataset.hasBackground;
-	}
-	if (metadata?.color) {
-		pill.style.color = metadata.color;
-		pill.dataset.hasColor = "true";
-	} else {
-		pill.style.removeProperty("color");
-		delete pill.dataset.hasColor;
-	}
-
-	const content = pill.querySelector<HTMLElement>(".multi-select-pill-content");
-	if (content) {
-		content.textContent = "";
-		if (metadata?.icon) {
-			const iconSpan = document.createElement("span");
-			iconSpan.className = "nn-file-pill-inline-icon";
-			iconSpan.setAttribute("aria-hidden", "true");
-			try { setIcon(iconSpan, metadata.icon); } catch (_) { /* ignore */ }
-			content.appendChild(iconSpan);
-		}
-		content.appendChild(document.createTextNode(label));
-	}
-}
-
-// Sets the label text inside .multi-select-pill-content, replacing any children.
-function setPillLabel(pill: HTMLElement, label: string): void {
-	const content = pill.querySelector<HTMLElement>(".multi-select-pill-content");
-	if (content) {
-		content.textContent = label;
-	}
-}
-
-		if (api && !api.isStorageReady()) {
-			api.whenReady()
-				.then(() => updatePropertyTagPills(plugin))
-				.catch((error) => {
-					console.error("API ready promise rejected:", error);
-				});
-		}
-
-		metrics.duration = performance.now() - start;
-		logMetrics("Property pill decoration", metrics);
-	} catch (error) {
-		console.error("Property pill update error:", error);
-	}
-}
-
 export function cleanupPropertyTagPills(plugin: NotebookTagsPlugin): void {
 	try {
 		let cleanedCount = 0;
@@ -196,7 +177,6 @@ export function cleanupPropertyTagPills(plugin: NotebookTagsPlugin): void {
 			try {
 				if (!element.isConnected) return;
 				if (element.classList.contains("multi-select-pill")) {
-					// Restore pill: put original tag text back into pill-content
 					const originalTag = element.dataset.originalTag ?? "";
 					const content = element.querySelector<HTMLElement>(".multi-select-pill-content");
 					if (content) content.textContent = originalTag;
@@ -218,58 +198,6 @@ export function cleanupPropertyTagPills(plugin: NotebookTagsPlugin): void {
 		console.debug(`Cleaned up ${cleanedCount} decorated tag elements`);
 	} catch (error) {
 		console.error("Cleanup error:", error);
-	}
-}
-
-function createTagWidget(tag: string, plugin: NotebookTagsPlugin): HTMLElement {
-	const wrapper = document.createElement("span");
-	wrapper.classList.add("nm-tagged", BASELINE_TAG_CLASS);
-
-	const api = apiManager.getApi(plugin);
-	const label = basenameFromTag(tag);
-
-	try {
-		if (api) {
-			if (api.isStorageReady()) {
-				decorateTagElement(wrapper, tag, api, { addNmTaggedClass: false });
-			} else {
-				wrapper.textContent = label;
-				api.whenReady()
-					.then(() => decorateTagElement(wrapper, tag, api, { addNmTaggedClass: false }))
-					.catch((error) => {
-						console.error(`Failed to decorate frontmatter tag "${sanitizeLog(tag)}":`, error);
-					});
-			}
-		} else {
-			wrapper.textContent = label;
-		}
-	} catch (error) {
-		console.error("Widget creation error:", error);
-		wrapper.textContent = label;
-	}
-
-	plugin.decoratedElements.add(wrapper);
-	return wrapper;
-}
-
-class FrontmatterTagWidget extends WidgetType {
-	constructor(
-		private text: string,
-		private plugin: NotebookTagsPlugin
-	) {
-		super();
-	}
-
-	public toDOM(): HTMLElement {
-		return createTagWidget(this.text, this.plugin);
-	}
-
-	public ignoreEvent(): boolean {
-		return true;
-	}
-
-	public eq(other: WidgetType): boolean {
-		return other instanceof FrontmatterTagWidget && other.text === this.text;
 	}
 }
 
