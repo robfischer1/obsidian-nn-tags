@@ -1,11 +1,12 @@
 import { editorLivePreviewField } from "obsidian";
+import { setIcon } from "obsidian";
 import { syntaxTree } from "@codemirror/language";
 import { RangeSetBuilder } from "@codemirror/state";
 import { Decoration, ViewPlugin, WidgetType, ViewUpdate, EditorView } from "@codemirror/view";
 import type NotebookTagsPlugin from "./main";
 import type { NotebookNavigatorAPI } from "./notebook-navigator";
 import { apiManager } from "./utils/api-manager";
-import { basenameFromTag, extractTagFromHref } from "./utils/tag-utils";
+import { normalizeTag, basenameFromTag, extractTagFromHref, getTagMetaWithInheritance } from "./utils/tag-utils";
 import { decorateTagElement, storeOriginalTagState, restoreOriginalTagState } from "./utils/dom-utils";
 
 const BASELINE_TAG_CLASS = "basename-tag";
@@ -78,7 +79,7 @@ export function renderMarkdownTags(plugin: NotebookTagsPlugin) {
 export function updatePropertyTagPills(plugin: NotebookTagsPlugin) {
 	try {
 		const api = apiManager.getApi(plugin);
-		const selector = `[data-property-key="tags"] .multi-select-pill-content span:not(.${BASELINE_TAG_CLASS})`;
+		const selector = `[data-property-key="tags"] .multi-select-pill:not(.${BASELINE_TAG_CLASS})`;
 
 		const metrics: DecoratorMetrics = {
 			elementsFound: 0,
@@ -88,27 +89,90 @@ export function updatePropertyTagPills(plugin: NotebookTagsPlugin) {
 		};
 		const start = performance.now();
 
-		document.querySelectorAll<HTMLElement>(selector).forEach((span) => {
+		document.querySelectorAll<HTMLElement>(selector).forEach((pill) => {
 			try {
 				metrics.elementsFound++;
-				const tagText = span.textContent ?? "";
-				span.classList.add(BASELINE_TAG_CLASS);
-				storeOriginalTagState(span, tagText);
+				const tagText = pill.querySelector(".multi-select-pill-content span")?.textContent
+					?? pill.querySelector(".multi-select-pill-content")?.textContent
+					?? "";
+				if (!tagText) return;
+
+				pill.classList.add(BASELINE_TAG_CLASS);
+				storeOriginalTagState(pill, tagText);
 
 				if (api?.isStorageReady()) {
-					decorateTagElement(span, tagText, api);
+					decoratePillElement(pill, tagText, api);
 					metrics.elementsDecorated++;
 				} else {
-					span.textContent = basenameFromTag(tagText);
+					setPillLabel(pill, basenameFromTag(tagText));
 					metrics.elementsDecorated++;
 				}
 
-				plugin.decoratedElements.add(span);
+				plugin.decoratedElements.add(pill);
 			} catch (error) {
 				metrics.errorCount++;
-				console.error(`Failed to decorate property tag "${sanitizeLog(span.textContent ?? "")}":`, error);
+				console.error(`Failed to decorate property tag "${sanitizeLog(pill.textContent ?? "")}":`, error);
 			}
 		});
+
+		if (api && !api.isStorageReady()) {
+			api.whenReady()
+				.then(() => updatePropertyTagPills(plugin))
+				.catch((error) => {
+					console.error("API ready promise rejected:", error);
+				});
+		}
+
+		metrics.duration = performance.now() - start;
+		logMetrics("Property pill decoration", metrics);
+	} catch (error) {
+		console.error("Property pill update error:", error);
+	}
+}
+
+// Applies NN metadata (color, background, icon) to a .multi-select-pill element.
+// Color/background go on the pill itself; the label is rebuilt inside pill-content.
+function decoratePillElement(pill: HTMLElement, rawTag: string, api: NotebookNavigatorAPI): void {
+	const tag = normalizeTag(rawTag);
+	const metadata = getTagMetaWithInheritance(api, tag);
+	const label = basenameFromTag(tag);
+
+	if (metadata?.backgroundColor) {
+		pill.style.setProperty("--nn-file-tag-custom-bg", metadata.backgroundColor);
+		pill.dataset.hasBackground = "true";
+	} else {
+		pill.style.removeProperty("--nn-file-tag-custom-bg");
+		delete pill.dataset.hasBackground;
+	}
+	if (metadata?.color) {
+		pill.style.color = metadata.color;
+		pill.dataset.hasColor = "true";
+	} else {
+		pill.style.removeProperty("color");
+		delete pill.dataset.hasColor;
+	}
+
+	const content = pill.querySelector<HTMLElement>(".multi-select-pill-content");
+	if (content) {
+		content.textContent = "";
+		if (metadata?.icon) {
+			const iconSpan = document.createElement("span");
+			iconSpan.className = "nn-file-pill-inline-icon";
+			iconSpan.setAttribute("aria-hidden", "true");
+			try { setIcon(iconSpan, metadata.icon); } catch (_) { /* ignore */ }
+			content.appendChild(iconSpan);
+		}
+		content.appendChild(document.createTextNode(label));
+	}
+}
+
+// Sets the label text inside .multi-select-pill-content, replacing any children.
+function setPillLabel(pill: HTMLElement, label: string): void {
+	const content = pill.querySelector<HTMLElement>(".multi-select-pill-content");
+	if (content) {
+		content.textContent = label;
+	}
+}
 
 		if (api && !api.isStorageReady()) {
 			api.whenReady()
@@ -130,10 +194,22 @@ export function cleanupPropertyTagPills(plugin: NotebookTagsPlugin): void {
 		let cleanedCount = 0;
 		plugin.decoratedElements.forEach((element) => {
 			try {
-				if (element.isConnected) {
+				if (!element.isConnected) return;
+				if (element.classList.contains("multi-select-pill")) {
+					// Restore pill: put original tag text back into pill-content
+					const originalTag = element.dataset.originalTag ?? "";
+					const content = element.querySelector<HTMLElement>(".multi-select-pill-content");
+					if (content) content.textContent = originalTag;
+					delete element.dataset.originalTag;
+					delete element.dataset.hasColor;
+					delete element.dataset.hasBackground;
+					element.style.removeProperty("--nn-file-tag-custom-bg");
+					element.style.removeProperty("color");
+					element.classList.remove(BASELINE_TAG_CLASS);
+				} else {
 					restoreOriginalTagState(element);
-					cleanedCount++;
 				}
+				cleanedCount++;
 			} catch (error) {
 				console.error("Failed to restore tag element:", error);
 			}
