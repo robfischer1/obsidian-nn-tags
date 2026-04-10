@@ -15,18 +15,17 @@ export class SettingTab extends PluginSettingTab {
 	}
 
 	display() {
-		const { settings: setting } = this.plugin;
+		const { settings } = this.plugin;
 		const { containerEl } = this;
 		containerEl.empty();
 
-		const editorSetting = new Setting(containerEl);
-		editorSetting
+		new Setting(containerEl)
 			.setName("Enable notebook navigator tags")
 			.setDesc("Render notebook navigator tags inline")
 			.addToggle((toggle) => {
-				toggle.setValue(setting.enableNotebookTags);
+				toggle.setValue(settings.enableNotebookTags);
 				toggle.onChange(async (value) => {
-					setting.enableNotebookTags = value;
+					settings.enableNotebookTags = value;
 					await this.plugin.saveSettings();
 				});
 			});
