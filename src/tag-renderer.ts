@@ -1,147 +1,257 @@
-import { setIcon, editorLivePreviewField } from "obsidian";
+import { editorLivePreviewField, setIcon } from "obsidian";
 import { syntaxTree } from "@codemirror/language";
 import { RangeSetBuilder } from "@codemirror/state";
 import { Decoration, ViewPlugin, WidgetType, ViewUpdate, EditorView } from "@codemirror/view";
 import type NotebookTagsPlugin from "./main";
 import type { NotebookNavigatorAPI } from "./notebook-navigator";
+import { apiManager } from "./utils/api-manager";
+import { normalizeTag, basenameFromTag, extractTagFromHref, getTagMetaWithInheritance } from "./utils/tag-utils";
+import { decorateTagElement, storeOriginalTagState, restoreOriginalTagState } from "./utils/dom-utils";
 
 const BASELINE_TAG_CLASS = "basename-tag";
 
-type EmptyableElement = HTMLElement & { empty?: () => void };
-
-interface AppWithPlugins {
-	plugins: {
-		plugins: Record<string, { api?: NotebookNavigatorAPI }>;
-	};
+interface DecoratorMetrics {
+	elementsFound: number;
+	elementsDecorated: number;
+	errorCount: number;
+	duration: number;
 }
 
-function getNotebookNavigatorApi(plugin: NotebookTagsPlugin): NotebookNavigatorAPI | undefined {
-	const appWithPlugins = plugin.app as unknown as AppWithPlugins;
-	return appWithPlugins?.plugins?.plugins?.["notebook-navigator"]?.api;
+function sanitizeLog(value: string): string {
+	return value.replace(/[\r\n]/g, "");
 }
 
-function normalizeTag(tag: string): string {
-	return tag.startsWith("#") ? tag.slice(1) : tag;
-}
-
-function basenameFromTag(tag: string): string {
-	return tag.slice(tag.lastIndexOf("/") + 1).replaceAll("#", "");
-}
-
-function clearElement(element: HTMLElement) {
-	const emptyElement = element as EmptyableElement;
-	if (typeof emptyElement.empty === "function") {
-		emptyElement.empty();
-	} else {
-		element.textContent = "";
+function logMetrics(context: string, metrics: DecoratorMetrics): void {
+	if (metrics.duration > 100) {
+		console.warn(`${sanitizeLog(context)} took ${metrics.duration.toFixed(2)}ms:`, metrics);
+	} else if (metrics.errorCount > 0) {
+		console.debug(`${sanitizeLog(context)}:`, metrics);
 	}
 }
 
-function decorateTagElement(element: HTMLElement, rawTag: string, api: NotebookNavigatorAPI) {
+function shouldSkipRange(nodeFrom: number, nodeTo: number, selections: readonly { from: number; to: number }[]) {
+	return selections.some((selection) => nodeFrom <= selection.to && selection.from < nodeTo);
+}
+
+// Rebuilds the label (and optional icon) inside .multi-select-pill-content.
+function setPillLabel(pill: HTMLElement, label: string, iconId?: string): void {
+	const content = pill.querySelector<HTMLElement>(".multi-select-pill-content");
+	if (!content) return;
+	content.textContent = "";
+	if (iconId) {
+		const iconSpan = document.createElement("span");
+		iconSpan.className = "nn-file-pill-inline-icon";
+		iconSpan.setAttribute("aria-hidden", "true");
+		try { setIcon(iconSpan, iconId); } catch { /* ignore unknown icon */ }
+		content.appendChild(iconSpan);
+	}
+	content.appendChild(document.createTextNode(label));
+}
+
+// Applies NN metadata to a .multi-select-pill element.
+// Color/background are set on the pill wrapper; label is rebuilt inside pill-content.
+function decoratePillElement(pill: HTMLElement, rawTag: string, api: NotebookNavigatorAPI): void {
 	const tag = normalizeTag(rawTag);
-	const metadata = api.metadata.getTagMeta(tag);
+	const metadata = getTagMetaWithInheritance(api, tag);
 	const label = basenameFromTag(tag);
-	clearElement(element);
-	element.classList.add("nm-tagged");
-
-	if (metadata?.icon) {
-		const iconEl = element.createSpan({ cls: "nm-tag-icon" });
-		setIcon(iconEl, metadata.icon);
-		if (metadata.color) {
-			iconEl.style.color = metadata.color;
-		}
-		element.appendChild(iconEl);
-	}
-
-	element.appendChild(document.createTextNode(label));
-
-	if (metadata?.color) {
-		element.style.setProperty("--nm-tag-color", metadata.color);
-	} else {
-		element.style.removeProperty("--nm-tag-color");
-	}
 
 	if (metadata?.backgroundColor) {
-		element.style.setProperty("--nm-tag-background", metadata.backgroundColor);
+		pill.style.setProperty("--nn-file-tag-custom-bg", metadata.backgroundColor);
+		pill.dataset.hasBackground = "true";
 	} else {
-		element.style.removeProperty("--nm-tag-background");
+		pill.style.removeProperty("--nn-file-tag-custom-bg");
+		delete pill.dataset.hasBackground;
 	}
+
+	if (metadata?.color) {
+		pill.style.color = metadata.color;
+		pill.dataset.hasColor = "true";
+	} else {
+		pill.style.removeProperty("color");
+		delete pill.dataset.hasColor;
+	}
+
+	setPillLabel(pill, label, metadata?.icon ?? undefined);
 }
 
 export function renderMarkdownTags(plugin: NotebookTagsPlugin) {
 	plugin.registerMarkdownPostProcessor(async (element) => {
-		const api = getNotebookNavigatorApi(plugin);
-		if (!api) {
-			return;
+		try {
+			const api = apiManager.getApi(plugin);
+			if (!api) {
+				console.debug("Markdown processor: Notebook Navigator API not available");
+				return;
+			}
+
+			await api.whenReady();
+
+			const metrics: DecoratorMetrics = {
+				elementsFound: 0,
+				elementsDecorated: 0,
+				errorCount: 0,
+				duration: 0,
+			};
+			const start = performance.now();
+
+			element.querySelectorAll<HTMLAnchorElement>("a.tag").forEach((anchor) => {
+				try {
+					metrics.elementsFound++;
+					const href = anchor.getAttribute("href") ?? anchor.innerText;
+					const tag = extractTagFromHref(href);
+					decorateTagElement(anchor, tag, api);
+					storeOriginalTagState(anchor, tag);
+					plugin.decoratedElements.add(anchor);
+					metrics.elementsDecorated++;
+				} catch (error) {
+					metrics.errorCount++;
+					console.error("Failed to decorate markdown tag:", error);
+				}
+			});
+
+			metrics.duration = performance.now() - start;
+			logMetrics("Markdown tag rendering", metrics);
+		} catch (error) {
+			console.error("Markdown post-processor error:", error);
 		}
-		await api.whenReady();
-		element.querySelectorAll<HTMLAnchorElement>("a.tag").forEach((anchor) => {
-			const href = anchor.getAttribute("href") ?? anchor.innerText;
-			decorateTagElement(anchor, href, api);
-		});
 	});
 }
 
 export function updatePropertyTagPills(plugin: NotebookTagsPlugin) {
-	const api = getNotebookNavigatorApi(plugin);
-	const selector = `[data-property-key="tags"] .multi-select-pill-content span:not(.${BASELINE_TAG_CLASS})`;
-	document.querySelectorAll<HTMLElement>(selector).forEach((span) => {
-		const tagText = span.textContent ?? "";
-		span.className = BASELINE_TAG_CLASS;
-		span.dataset.tag = tagText;
-		if (api?.isStorageReady()) {
-			decorateTagElement(span, tagText, api);
-		} else {
-			span.textContent = basenameFromTag(tagText);
-		}
-	});
+	try {
+		const api = apiManager.getApi(plugin);
+		const selector = `[data-property-key="tags"] .multi-select-pill:not(.${BASELINE_TAG_CLASS})`;
 
-	if (api && !api.isStorageReady()) {
-		api.whenReady().then(() => updatePropertyTagPills(plugin)).catch(() => {
-			/* ignore */
+		const metrics: DecoratorMetrics = {
+			elementsFound: 0,
+			elementsDecorated: 0,
+			errorCount: 0,
+			duration: 0,
+		};
+		const start = performance.now();
+
+		document.querySelectorAll<HTMLElement>(selector).forEach((pill) => {
+			try {
+				metrics.elementsFound++;
+				const tagText = pill.querySelector(".multi-select-pill-content span")?.textContent
+					?? pill.querySelector(".multi-select-pill-content")?.textContent
+					?? "";
+				if (!tagText) return;
+
+				pill.classList.add(BASELINE_TAG_CLASS);
+				storeOriginalTagState(pill, tagText);
+
+				if (api?.isStorageReady()) {
+					decoratePillElement(pill, tagText, api);
+					metrics.elementsDecorated++;
+				} else {
+					setPillLabel(pill, basenameFromTag(tagText));
+					metrics.elementsDecorated++;
+				}
+
+				plugin.decoratedElements.add(pill);
+			} catch (error) {
+				metrics.errorCount++;
+				console.error(`Failed to decorate property tag "${sanitizeLog(pill.textContent ?? "")}":`, error);
+			}
 		});
+
+		if (api && !api.isStorageReady()) {
+			api.whenReady()
+				.then(() => updatePropertyTagPills(plugin))
+				.catch((error) => {
+					console.error("API ready promise rejected:", error);
+				});
+		}
+
+		metrics.duration = performance.now() - start;
+		logMetrics("Property pill decoration", metrics);
+	} catch (error) {
+		console.error("Property pill update error:", error);
 	}
 }
 
-function createTagWidget(tag: string, plugin: NotebookTagsPlugin): HTMLElement {
-	const wrapper = document.createElement("span");
-	wrapper.className = `tag ${BASELINE_TAG_CLASS}`;
-	wrapper.role = "button";
-	wrapper.tabIndex = 0;
-	wrapper.onclick = (event) => {
-		event.preventDefault();
-		event.stopPropagation();
-		const api = getNotebookNavigatorApi(plugin);
-		api?.navigation.navigateToTag(tag).catch(() => {
-			/* ignore */
+export function cleanupPropertyTagPills(plugin: NotebookTagsPlugin): void {
+	try {
+		let cleanedCount = 0;
+		plugin.decoratedElements.forEach((element) => {
+			try {
+				if (!element.isConnected) return;
+				if (element.classList.contains("multi-select-pill")) {
+					const originalTag = element.dataset.originalTag ?? "";
+					const content = element.querySelector<HTMLElement>(".multi-select-pill-content");
+					if (content) content.textContent = originalTag;
+					delete element.dataset.originalTag;
+					delete element.dataset.hasColor;
+					delete element.dataset.hasBackground;
+					element.style.removeProperty("--nn-file-tag-custom-bg");
+					element.style.removeProperty("color");
+					element.classList.remove(BASELINE_TAG_CLASS);
+				} else {
+					restoreOriginalTagState(element);
+				}
+				cleanedCount++;
+			} catch (error) {
+				console.error("Failed to restore tag element:", error);
+			}
 		});
-	};
-
-	const api = getNotebookNavigatorApi(plugin);
-	const label = basenameFromTag(tag);
-	if (api) {
-		if (api.isStorageReady()) {
-			decorateTagElement(wrapper, tag, api);
-		} else {
-			wrapper.textContent = label;
-			api.whenReady().then(() => decorateTagElement(wrapper, tag, api)).catch(() => {
-				/* ignore */
-			});
-		}
-	} else {
-		wrapper.textContent = label;
+		plugin.decoratedElements.clear();
+		console.debug(`Cleaned up ${cleanedCount} decorated tag elements`);
+	} catch (error) {
+		console.error("Cleanup error:", error);
 	}
-
-	return wrapper;
 }
 
-class FrontmatterTagWidget extends WidgetType {
-	constructor(private text: string, private plugin: NotebookTagsPlugin) {
+class HashtagWidget extends WidgetType {
+	constructor(
+		private tag: string,
+		private plugin: NotebookTagsPlugin
+	) {
 		super();
 	}
 
 	public toDOM(): HTMLElement {
-		return createTagWidget(this.text, this.plugin);
+		const wrapper = document.createElement("span");
+		wrapper.classList.add("nm-tagged", BASELINE_TAG_CLASS);
+		wrapper.setAttribute("data-tag", this.tag);
+		wrapper.setAttribute("aria-label", `Tag: ${this.tag}`);
+
+		const api = apiManager.getApi(this.plugin);
+
+		if (api?.isStorageReady()) {
+			this.applyDecoration(wrapper, api);
+		} else if (api) {
+			wrapper.textContent = basenameFromTag(this.tag);
+			api.whenReady()
+				.then(() => {
+					if (wrapper.isConnected) {
+						this.applyDecoration(wrapper, api);
+					}
+				})
+				.catch((error) => {
+					console.error(`Failed to decorate hashtag widget for "${sanitizeLog(this.tag)}":`, error);
+				});
+		} else {
+			wrapper.textContent = basenameFromTag(this.tag);
+		}
+
+		return wrapper;
+	}
+
+	public ignoreEvent(): boolean {
+		return true;
+	}
+
+	private applyDecoration(wrapper: HTMLElement, api: NotebookNavigatorAPI): void {
+		try {
+			decorateTagElement(wrapper, this.tag, api, { addNmTaggedClass: false });
+		} catch (error) {
+			console.error("Decoration failed:", error);
+			wrapper.textContent = basenameFromTag(this.tag);
+		}
+	}
+
+	public eq(other: WidgetType): boolean {
+		return other instanceof HashtagWidget && other.tag === this.tag;
 	}
 }
 
@@ -157,29 +267,30 @@ class TagDecorations {
 	}
 
 	public update(update: ViewUpdate) {
-		if (update.docChanged || update.viewportChanged) {
+		if (update.docChanged || update.selectionSet || update.viewportChanged) {
 			this.decorations = this.buildDecorations(update.view);
 		}
 	}
 
 	public destroy() {
-		// no-op
+		// Cleanup handled by plugin onunload
 	}
 
 	private buildDecorations(view: EditorView) {
 		const builder = new RangeSetBuilder<Decoration>();
-		if (!view.state.field(editorLivePreviewField)) {
-			return builder.finish();
-		}
-
-		const api = getNotebookNavigatorApi(this.plugin);
-		if (!this.plugin.settings.enableNotebookTags) {
-			return builder.finish();
-		}
 
 		try {
+			if (!view.state.field(editorLivePreviewField)) {
+				return builder.finish();
+			}
+
+			if (!this.plugin.settings.enableNotebookTags) {
+				return builder.finish();
+			}
+
 			for (const range of view.visibleRanges) {
 				let hashtagStart = 0;
+
 				syntaxTree(view.state).iterate({
 					from: range.from,
 					to: range.to,
@@ -189,66 +300,31 @@ class TagDecorations {
 						}
 
 						if (node.type.name.includes("hashtag-end")) {
-							const tag = view.state.sliceDoc(hashtagStart, node.to);
-							if (api?.isStorageReady()) {
-								const metadata = api.metadata.getTagMeta(tag);
-								let style = "";
-								if (metadata?.color) {
-									style += `color: ${metadata.color}; `;
+							try {
+								const tag = view.state.sliceDoc(hashtagStart, node.to);
+								const extendedFrom = hashtagStart - 1;
+								const extendedTo = node.to + 1;
+
+								if (shouldSkipRange(extendedFrom, extendedTo, view.state.selection.ranges)) {
+									return;
 								}
-								if (metadata?.backgroundColor) {
-									style += `background-color: ${metadata.backgroundColor}; `;
-								}
+
 								builder.add(
 									hashtagStart - 1,
 									node.to,
-									Decoration.mark({
-										attributes: {
-											"data-tag-value": tag,
-											style,
-										},
-										class: `cm-hashtag-inner cm-hashtag cm-meta cm-tag-${tag.replace(/[^a-zA-Z0-9]/g, "-")}`,
-									})
+									Decoration.replace({
+										widget: new HashtagWidget(tag, this.plugin),
+									}),
 								);
-							}
-						}
-
-						if (node.name === "hmd-frontmatter") {
-							const frontmatterStart = node.from;
-							const frontmatterEnd = node.to + 1;
-							for (const selection of view.state.selection.ranges) {
-								if (frontmatterStart <= selection.to && selection.from < frontmatterEnd) {
-									return;
-								}
-							}
-
-							let fieldName = "";
-							let cursor = node.node;
-							for (let i = 0; i < 20 && cursor; i++) {
-								cursor = cursor.prevSibling ?? node.node;
-								if (cursor?.name.includes("atom")) {
-									fieldName = view.state.sliceDoc(cursor.from, cursor.to);
-									break;
-								}
-							}
-
-							if (fieldName.toLowerCase() !== "tags" && fieldName.toLowerCase() !== "tag") {
-								return;
-							}
-
-							const tagText = view.state.sliceDoc(node.node.from, node.node.to);
-							const tags = tagText.split(" ").filter((text) => text !== "");
-							let offset = node.node.from;
-							for (const tag of tags) {
-								builder.add(offset, offset + tag.length, Decoration.replace({ widget: new FrontmatterTagWidget(tag, this.plugin) }));
-								offset += tag.length + 1;
+							} catch (error) {
+								console.error("Failed to decorate hashtag:", error);
 							}
 						}
 					},
 				});
 			}
 		} catch (error) {
-			console.error("Can not build tag decorations", error);
+			console.error("Error building decorations:", error);
 		}
 
 		return builder.finish();

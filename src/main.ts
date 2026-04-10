@@ -1,20 +1,32 @@
-import { Plugin } from "obsidian";
+import { debounce, Plugin } from "obsidian";
 import { DEFAULT_SETTINGS, NotebookTagsSettings, SettingTab } from "./settings";
-import { notebookTagPlugin, renderMarkdownTags, updatePropertyTagPills } from "./tag-renderer";
+import { notebookTagPlugin, renderMarkdownTags, updatePropertyTagPills, cleanupPropertyTagPills } from "./tag-renderer";
+import { apiManager } from "./utils/api-manager";
 
 export default class NotebookTagsPlugin extends Plugin {
 	settings: NotebookTagsSettings = DEFAULT_SETTINGS;
+	decoratedElements = new Set<HTMLElement>();
 
 	async onload() {
 		await this.loadSettings();
 		this.registerEditorExtension(notebookTagPlugin(this));
 		renderMarkdownTags(this);
 
-		const refreshPropertyPills = () => updatePropertyTagPills(this);
-		this.registerEvent(this.app.workspace.on("layout-change", refreshPropertyPills));
-		this.registerEvent(this.app.workspace.on("file-open", refreshPropertyPills));
-		refreshPropertyPills();
+		const debouncedRefresh = debounce(
+			() => updatePropertyTagPills(this),
+			300,
+			true
+		);
+
+		this.registerEvent(this.app.workspace.on("layout-change", debouncedRefresh));
+		this.registerEvent(this.app.workspace.on("file-open", debouncedRefresh));
+		debouncedRefresh();
 		this.addSettingTab(new SettingTab(this.app, this));
+	}
+
+	onunload(): void {
+		cleanupPropertyTagPills(this);
+		apiManager.clearCache();
 	}
 
 	async loadSettings() {

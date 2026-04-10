@@ -1,27 +1,100 @@
+/* Base pill — applied to inline tag anchors and live editor widgets */
 .nm-tagged {
 	display: inline-flex;
 	align-items: center;
-	gap: 0.2em;
-	border-radius: 0.75em;
-	padding: 0.125em 0.35em;
-	line-height: 1.2;
-	color: var(--nm-tag-color, inherit);
-	background-color: var(--nm-tag-background, transparent);
+	padding: 0 8px;
+	border-radius: 10px;
+	border: 1px solid var(--nn-theme-file-tag-border-color, color-mix(in srgb, var(--text-muted) 30%, transparent));
+	font-size: 12px;
+	font-weight: 400;
+	white-space: nowrap;
+	line-height: 1;
+	background-color: var(--nn-theme-file-tag-bg, transparent);
+	color: var(--nn-theme-file-tag-color, var(--text-muted));
+	text-decoration: none;
+	cursor: default;
 }
 
-.nm-tagged .nm-tag-icon {
+/* Live editor widgets inherit the editor's font size */
+.cm-content .nm-tagged {
+	font-size: var(--font-text-size);
+	vertical-align: middle;
+}
+
+/* Live editor widget icon matches editor font size */
+.cm-content .nm-tagged .nn-file-pill-inline-icon {
+	width: var(--font-text-size);
+	height: var(--font-text-size);
+}
+
+.cm-content .nm-tagged .nn-file-pill-inline-icon svg {
+	width: var(--font-text-size);
+	height: var(--font-text-size);
+}
+
+/* Remove bold from color-only pills in the live editor */
+.cm-content .nm-tagged[data-has-color="true"]:not([data-has-background="true"]) {
+	font-weight: 400;
+}
+
+/* ── Frontmatter property pills ─────────────────────────────────────────────
+   We decorate .multi-select-pill directly (color/bg on the wrapper,
+   label rebuilt inside .multi-select-pill-content).                        */
+
+[data-property-key="tags"] .multi-select-pill[data-has-background="true"] {
+	background-image: linear-gradient(var(--nn-file-tag-custom-bg, transparent), var(--nn-file-tag-custom-bg, transparent));
+	border-color: color-mix(in srgb, currentColor 30%, transparent);
+}
+
+[data-property-key="tags"] .multi-select-pill[data-has-color="true"]:not([data-has-background="true"]) {
+	background-image: linear-gradient(
+		color-mix(in srgb, currentColor 10%, transparent),
+		color-mix(in srgb, currentColor 10%, transparent)
+	);
+	border-color: color-mix(in srgb, currentColor 30%, transparent);
+	font-weight: 600;
+}
+
+[data-property-key="tags"] .multi-select-pill[data-has-background="true"]:not([data-has-color="true"]) {
+	color: var(--nn-theme-navitem-name-color, var(--text-normal));
+}
+
+/* ── Shared color/background rules for .nm-tagged ───────────────────────── */
+
+.nm-tagged[data-has-background="true"] {
+	background-image: linear-gradient(var(--nn-file-tag-custom-bg, transparent), var(--nn-file-tag-custom-bg, transparent));
+	border-color: color-mix(in srgb, currentColor 30%, transparent);
+}
+
+.nm-tagged[data-has-color="true"]:not([data-has-background="true"]) {
+	background-image: linear-gradient(
+		color-mix(in srgb, currentColor 10%, transparent),
+		color-mix(in srgb, currentColor 10%, transparent)
+	);
+	border-color: color-mix(in srgb, currentColor 30%, transparent);
+	font-weight: 600;
+}
+
+.nm-tagged[data-has-background="true"]:not([data-has-color="true"]) {
+	color: var(--nn-theme-navitem-name-color, var(--text-normal));
+}
+
+/* ── Icon child span ─────────────────────────────────────────────────────── */
+
+.nm-tagged .nn-file-pill-inline-icon,
+[data-property-key="tags"] .multi-select-pill .nn-file-pill-inline-icon {
+	width: 12px;
+	height: 12px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	margin-right: 4px;
+	color: currentColor;
+	flex-shrink: 0;
 }
 
-span.basename-tag {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.2em;
-}
-
-span.basename-tag.nm-tagged {
-	color: var(--nm-tag-color, inherit);
-	background-color: var(--nm-tag-background, transparent);
+.nm-tagged .nn-file-pill-inline-icon svg,
+[data-property-key="tags"] .multi-select-pill .nn-file-pill-inline-icon svg {
+	width: 12px;
+	height: 12px;
 }
