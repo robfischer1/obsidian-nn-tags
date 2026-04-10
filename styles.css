@@ -17,6 +17,16 @@
 	cursor: default;
 }
 
+/* When our span is inside .multi-select-pill-content, collapse the parent's
+   own padding/sizing so it doesn't double-wrap the pill appearance. */
+.multi-select-pill-content:has(> span.nm-tagged) {
+	padding: 0;
+	background: none;
+	border: none;
+	height: auto;
+	line-height: 1;
+}
+
 /* Background color via layered gradient — matches NN's --nn-file-tag-custom-bg technique */
 .nm-tagged[data-has-background="true"] {
 	background-image: linear-gradient(var(--nn-file-tag-custom-bg, transparent), var(--nn-file-tag-custom-bg, transparent));

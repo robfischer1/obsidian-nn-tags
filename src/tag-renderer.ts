@@ -78,8 +78,7 @@ export function renderMarkdownTags(plugin: NotebookTagsPlugin) {
 export function updatePropertyTagPills(plugin: NotebookTagsPlugin) {
 	try {
 		const api = apiManager.getApi(plugin);
-		// Target the pill div directly, not the child span inside it.
-		const selector = `[data-property-key="tags"] .multi-select-pill-content:not(.${BASELINE_TAG_CLASS})`;
+		const selector = `[data-property-key="tags"] .multi-select-pill-content span:not(.${BASELINE_TAG_CLASS})`;
 
 		const metrics: DecoratorMetrics = {
 			elementsFound: 0,
@@ -89,26 +88,25 @@ export function updatePropertyTagPills(plugin: NotebookTagsPlugin) {
 		};
 		const start = performance.now();
 
-		document.querySelectorAll<HTMLElement>(selector).forEach((pill) => {
+		document.querySelectorAll<HTMLElement>(selector).forEach((span) => {
 			try {
 				metrics.elementsFound++;
-				// Read the tag text from the child span before we clear the div.
-				const tagText = pill.querySelector("span")?.textContent ?? pill.textContent ?? "";
-				pill.classList.add(BASELINE_TAG_CLASS);
-				storeOriginalTagState(pill, tagText);
+				const tagText = span.textContent ?? "";
+				span.classList.add(BASELINE_TAG_CLASS);
+				storeOriginalTagState(span, tagText);
 
 				if (api?.isStorageReady()) {
-					decorateTagElement(pill, tagText, api);
+					decorateTagElement(span, tagText, api);
 					metrics.elementsDecorated++;
 				} else {
-					pill.textContent = basenameFromTag(tagText);
+					span.textContent = basenameFromTag(tagText);
 					metrics.elementsDecorated++;
 				}
 
-				plugin.decoratedElements.add(pill);
+				plugin.decoratedElements.add(span);
 			} catch (error) {
 				metrics.errorCount++;
-				console.error(`Failed to decorate property tag "${sanitizeLog(pill.textContent ?? "")}":`, error);
+				console.error(`Failed to decorate property tag "${sanitizeLog(span.textContent ?? "")}":`, error);
 			}
 		});
 
