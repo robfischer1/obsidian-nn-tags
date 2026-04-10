@@ -20,13 +20,6 @@ export default class NotebookTagsPlugin extends Plugin {
 
 		this.registerEvent(this.app.workspace.on("layout-change", debouncedRefresh));
 		this.registerEvent(this.app.workspace.on("file-open", debouncedRefresh));
-		// Invalidate API cache when any plugin is enabled so Notebook Navigator is picked up immediately
-		this.registerEvent(
-			(this.app as any).plugins.on("change", () => {
-				apiManager.clearCache();
-				debouncedRefresh();
-			})
-		);
 		debouncedRefresh();
 		this.addSettingTab(new SettingTab(this.app, this));
 	}
