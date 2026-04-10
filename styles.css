@@ -18,6 +18,7 @@
 /* Live editor widgets inherit the editor's font size */
 .cm-content .nm-tagged {
 	font-size: var(--font-text-size);
+	vertical-align: middle;
 }
 
 /* Live editor widget icon matches editor font size */
