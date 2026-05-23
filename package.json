@@ -8,25 +8,31 @@
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
-		"lint": "eslint ."
+		"lint": "eslint .",
+		"test": "vitest run"
 	},
-	"keywords": [],
+	"author": "Rob Fischer",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/robfischer1/obsidian-nn-tags"
+	},
+	"homepage": "https://github.com/robfischer1/obsidian-nn-tags#readme",
+	"keywords": ["obsidian", "obsidian-plugin", "notebook-navigator", "tags"],
 	"license": "Apache-2.0",
 	"devDependencies": {
+		"@codemirror/language": "^6.8.0",
+		"@codemirror/state": "^6.2.1",
+		"@codemirror/view": "^6.15.3",
+		"@eslint/js": "9.30.1",
 		"@types/node": "^16.11.6",
 		"esbuild": "0.25.5",
 		"eslint-plugin-obsidianmd": "0.1.9",
 		"globals": "14.0.0",
+		"jiti": "2.6.1",
+		"obsidian": "latest",
 		"tslib": "2.4.0",
 		"typescript": "^5.8.3",
 		"typescript-eslint": "8.35.1",
-		"@eslint/js": "9.30.1",
-		"jiti": "2.6.1",
-		"@codemirror/language": "^6.8.0",
-		"@codemirror/state": "^6.2.1",
-		"@codemirror/view": "^6.15.3",
-		"obsidian": "latest",
-		"rome": "^12.1.0"
-	},
-	"dependencies": {}
+		"vitest": "^4.1.7"
+	}
 }

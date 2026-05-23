@@ -6,7 +6,7 @@ import type NotebookTagsPlugin from "./main";
 import type { NotebookNavigatorAPI } from "./notebook-navigator";
 import { apiManager } from "./utils/api-manager";
 import { normalizeTag, basenameFromTag, extractTagFromHref, getTagMetaWithInheritance } from "./utils/tag-utils";
-import { decorateTagElement, storeOriginalTagState, restoreOriginalTagState } from "./utils/dom-utils";
+import { applyTagStyles, decorateTagElement, storeOriginalTagState, restoreOriginalTagState, sanitizeLog } from "./utils/dom-utils";
 
 const BASELINE_TAG_CLASS = "basename-tag";
 
@@ -15,10 +15,6 @@ interface DecoratorMetrics {
 	elementsDecorated: number;
 	errorCount: number;
 	duration: number;
-}
-
-function sanitizeLog(value: string): string {
-	return value.replace(/[\r\n]/g, "");
 }
 
 function logMetrics(context: string, metrics: DecoratorMetrics): void {
@@ -55,21 +51,7 @@ function decoratePillElement(pill: HTMLElement, rawTag: string, api: NotebookNav
 	const metadata = getTagMetaWithInheritance(api, tag);
 	const label = basenameFromTag(tag);
 
-	if (metadata?.backgroundColor) {
-		pill.style.setProperty("--nn-file-tag-custom-bg", metadata.backgroundColor);
-		pill.dataset.hasBackground = "true";
-	} else {
-		pill.style.removeProperty("--nn-file-tag-custom-bg");
-		delete pill.dataset.hasBackground;
-	}
-
-	if (metadata?.color) {
-		pill.style.color = metadata.color;
-		pill.dataset.hasColor = "true";
-	} else {
-		pill.style.removeProperty("color");
-		delete pill.dataset.hasColor;
-	}
+	applyTagStyles(pill, metadata);
 
 	setPillLabel(pill, label, metadata?.icon ?? undefined);
 }

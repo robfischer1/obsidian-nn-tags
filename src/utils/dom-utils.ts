@@ -1,19 +1,42 @@
 import { setIcon } from "obsidian";
-import type { NotebookNavigatorAPI } from "../notebook-navigator";
+import type { NotebookNavigatorAPI, TagMetadata } from "../notebook-navigator";
 import { normalizeTag, basenameFromTag, getTagMetaWithInheritance } from "./tag-utils";
 
-function sanitizeLog(value: string): string {
+export function sanitizeLog(value: string): string {
 	return value.replace(/[\r\n]/g, "");
 }
 
 type EmptyableElement = HTMLElement & { empty?: () => void };
 
-export function clearElement(element: HTMLElement): void {
+function clearElement(element: HTMLElement): void {
 	const emptyElement = element as EmptyableElement;
 	if (typeof emptyElement.empty === "function") {
 		emptyElement.empty();
 	} else {
 		element.textContent = "";
+	}
+}
+
+/**
+ * Applies color, background-color, and dataset flags from tag metadata to an element.
+ * Shared by both `decorateTagElement` (markdown/editor tags) and `decoratePillElement`
+ * (frontmatter property pills) to avoid duplicating CSS property application logic.
+ */
+export function applyTagStyles(element: HTMLElement, metadata: TagMetadata | null | undefined): void {
+	if (metadata?.backgroundColor) {
+		element.style.setProperty("--nn-file-tag-custom-bg", metadata.backgroundColor);
+		element.dataset.hasBackground = "true";
+	} else {
+		element.style.removeProperty("--nn-file-tag-custom-bg");
+		delete element.dataset.hasBackground;
+	}
+
+	if (metadata?.color) {
+		element.style.color = metadata.color;
+		element.dataset.hasColor = "true";
+	} else {
+		element.style.removeProperty("color");
+		delete element.dataset.hasColor;
 	}
 }
 
@@ -42,24 +65,7 @@ export function decorateTagElement(
 
 		element.setAttribute("data-full-tag", tag);
 
-		// Mirror NN's background technique: set a CSS custom property consumed by
-		// background-image in styles.css so the color layers over the theme base bg.
-		if (metadata?.backgroundColor) {
-			element.style.setProperty("--nn-file-tag-custom-bg", metadata.backgroundColor);
-			element.dataset.hasBackground = "true";
-		} else {
-			element.style.removeProperty("--nn-file-tag-custom-bg");
-			delete element.dataset.hasBackground;
-		}
-
-		// Color is set directly as an inline style, matching NN's approach.
-		if (metadata?.color) {
-			element.style.color = metadata.color;
-			element.dataset.hasColor = "true";
-		} else {
-			element.style.removeProperty("color");
-			delete element.dataset.hasColor;
-		}
+		applyTagStyles(element, metadata);
 
 		// Wrap icon in a dedicated child span (nn-file-pill-inline-icon) so it
 		// gets the correct 12×12 sizing from styles.css, matching NN's structure.
