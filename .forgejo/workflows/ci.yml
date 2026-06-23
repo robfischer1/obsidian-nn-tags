@@ -1,0 +1,37 @@
+# Forgejo Actions: CI gate for obsidian-nn-tags on the nas01 self-hosted
+# runner. This Forgejo instance scans ONLY .forgejo/workflows -- the
+# GitHub-flavored .github/workflows/lint.yml runs on the GitHub mirror, never
+# here. Same typecheck/build/lint/test checks as that workflow, adapted for the
+# act-runner:
+#   - runs-on: nas01 (the registered self-hosted runner label, not ubuntu-latest)
+#   - actions referenced by full URL (a bare actions/* resolves against the
+#     Forgejo instance, which has no action registry -> 404)
+# Single Node version here; the GitHub mirror keeps the 20+22 matrix, but the
+# nas01 runner is one host, so a matrix would only serialize.
+
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: nas01
+    container:
+      image: catthehacker/ubuntu:act-22.04
+    steps:
+      - uses: https://github.com/actions/checkout@v4
+
+      - name: Set up Node
+        uses: https://github.com/actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Gate — typecheck / build / lint / test
+        run: |
+          npm ci
+          npx tsc --noEmit --skipLibCheck
+          npm run build --if-present
+          npm run lint
+          npm test
